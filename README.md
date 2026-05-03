@@ -37,6 +37,16 @@ Quant_trading/
 - Separate research, backtesting, risk, and execution concerns.
 - Add trading logic only after the interfaces and tests are clear.
 
+## Setup
+
+Install the project in editable mode from the repository root:
+
+```powershell
+python -m pip install -e .
+```
+
+This makes the `quant_trading` package importable from scripts, tests, and notebooks.
+
 ## Core Interfaces
 
 - `DataProvider`: `src/quant_trading/data/base.py`
