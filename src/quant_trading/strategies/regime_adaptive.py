@@ -99,8 +99,8 @@ class RegimeAdaptiveStrategy(UniverseStrategy):
     @staticmethod
     def _strategy_weights(trend_strength: pd.Series) -> dict[str, pd.Series]:
         """Return normalized strategy weights for each date."""
-        momentum_weight = 0.1 + 0.2 * trend_strength
         moving_average_weight = 0.3 + 0.6 * trend_strength
+        momentum_weight = 0.1 + 0.2 * trend_strength
         rsi_weight = (1.0 - moving_average_weight - momentum_weight).clip(lower=0.0)
 
         total_weight = moving_average_weight + rsi_weight + momentum_weight

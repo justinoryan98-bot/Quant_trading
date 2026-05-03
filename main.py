@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import matplotlib
@@ -12,6 +11,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from config.periods import PERIODS
+from config.universe import TICKERS
 from quant_trading.backtesting import VectorizedBacktestEngine
 from quant_trading.data import YFinanceDataProvider
 from quant_trading.strategies import (
@@ -101,73 +102,11 @@ def print_regime_weight_diagnostics(weights: dict[str, float]) -> None:
     print()
 
 
-def main() -> None:
-    """Download data, run strategies, and print summary metrics."""
-    tickers = [
-        "AAPL",
-        "MSFT",
-        "NVDA",
-        "AMZN",
-        "GOOGL",
-        "META",
-        "AVGO",
-        "TSLA",
-        "JPM",
-        "V",
-        "MA",
-        "XOM",
-        "CVX",
-        "UNH",
-        "JNJ",
-        "LLY",
-        "PG",
-        "KO",
-        "COST",
-        "WMT",
-        "HD",
-        "MCD",
-        "CAT",
-        "GE",
-        "NFLX",
-        "PEP",
-        "ABBV",
-        "MRK",
-        "TMO",
-        "ADBE",
-        "CRM",
-        "ORCL",
-        "INTC",
-        "AMD",
-        "QCOM",
-        "TXN",
-        "IBM",
-        "AMAT",
-        "LRCX",
-        "GS",
-        "MS",
-        "BLK",
-        "SCHW",
-        "BK",
-        "SPGI",
-        "ADP",
-        "NOW",
-        "ISRG",
-        "MDLZ",
-        "CL",
-    ]
-    periods = [
-        ("2018-01-01 to 2020-01-01", datetime(2018, 1, 1), datetime(2020, 1, 1)),
-        ("2020-01-01 to 2022-01-01", datetime(2020, 1, 1), datetime(2022, 1, 1)),
-        ("2022-01-01 to 2024-01-01", datetime(2022, 1, 1), datetime(2024, 1, 1)),
-        ("2024-01-01 to today", datetime(2024, 1, 1), datetime.today()),
-    ]
-
-    data_provider = YFinanceDataProvider()
-    reports_dir = Path("reports")
-    reports_dir.mkdir(exist_ok=True)
+def get_strategies():
+    """Return configured strategies for the backtest run."""
     regime_adaptive_strategy = RegimeAdaptiveStrategy()
 
-    strategies = [
+    return [
         ("MA/RSI 100/0", [(MovingAverageStrategy(), 1.0), (RSIMeanReversionStrategy(), 0.0)]),
         ("MA/RSI 80/20", [(MovingAverageStrategy(), 0.8), (RSIMeanReversionStrategy(), 0.2)]),
         ("MA/RSI 70/30", [(MovingAverageStrategy(), 0.7), (RSIMeanReversionStrategy(), 0.3)]),
@@ -195,8 +134,21 @@ def main() -> None:
         ("Regime Adaptive", regime_adaptive_strategy),
     ]
 
-    for period_name, start_date, end_date in periods:
-        price_data = data_provider.get_history(tickers, start=start_date, end=end_date)
+
+def main() -> None:
+    """Download data, run strategies, and print summary metrics."""
+    data_provider = YFinanceDataProvider()
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    strategies = get_strategies()
+    regime_adaptive_strategy = next(
+        strategy
+        for strategy_name, strategy in strategies
+        if strategy_name == "Regime Adaptive"
+    )
+
+    for period_name, start_date, end_date in PERIODS:
+        price_data = data_provider.get_history(TICKERS, start=start_date, end=end_date)
 
         results = []
         strategy_curves: dict[str, pd.Series] = {}
