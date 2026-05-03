@@ -9,6 +9,7 @@ description = "A modular Python project for quantitative trading research and ex
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "matplotlib>=3.8",
     "pandas>=2.0",
     "yfinance>=0.2",
 ]
