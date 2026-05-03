@@ -17,6 +17,7 @@ from quant_trading.data import YFinanceDataProvider
 from quant_trading.strategies import (
     CrossSectionalMomentumStrategy,
     MovingAverageStrategy,
+    RegimeAdaptiveStrategy,
     RSIMeanReversionStrategy,
 )
 
@@ -177,6 +178,7 @@ def main() -> None:
                 (CrossSectionalMomentumStrategy(), 0.2),
             ],
         ),
+        ("Regime Adaptive", RegimeAdaptiveStrategy()),
     ]
 
     for period_name, start_date, end_date in periods:
