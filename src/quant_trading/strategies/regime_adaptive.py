@@ -15,10 +15,6 @@ from quant_trading.strategies.rsi_mean_reversion import RSIMeanReversionStrategy
 class RegimeAdaptiveStrategy(UniverseStrategy):
     """Blend MA, RSI, and momentum signals using trend strength."""
 
-    min_moving_average_weight = 0.2
-    max_moving_average_weight = 0.6
-    momentum_weight = 0.2
-
     def __init__(self) -> None:
         self.moving_average = MovingAverageStrategy()
         self.rsi_mean_reversion = RSIMeanReversionStrategy()
@@ -36,9 +32,7 @@ class RegimeAdaptiveStrategy(UniverseStrategy):
         for ticker, frame in price_data.items():
             index = frame.index
             strength = trend_strength.reindex(index).fillna(0.0)
-            moving_average_weight = self._moving_average_weight(strength)
-            momentum_weight = pd.Series(self.momentum_weight, index=index)
-            rsi_weight = 1.0 - moving_average_weight - momentum_weight
+            weights = self._strategy_weights(strength)
 
             moving_average_signal = self._series(
                 self.moving_average.generate_signals(frame),
@@ -54,12 +48,22 @@ class RegimeAdaptiveStrategy(UniverseStrategy):
             )
 
             signals[ticker] = (
-                moving_average_signal * moving_average_weight
-                + rsi_signal * rsi_weight
-                + momentum_signal * momentum_weight
+                moving_average_signal * weights["moving_average"]
+                + rsi_signal * weights["rsi_mean_reversion"]
+                + momentum_signal * weights["cross_sectional_momentum"]
             )
 
         return signals
+
+    def average_weights(self, price_data: dict[str, pd.DataFrame]) -> dict[str, float]:
+        """Return average regime-adaptive weights over a price history."""
+        trend_strength = self._trend_strength(price_data)
+        weights = self._strategy_weights(trend_strength)
+
+        return {
+            strategy_name: float(strategy_weights.mean())
+            for strategy_name, strategy_weights in weights.items()
+        }
 
     @staticmethod
     def _trend_strength(
@@ -92,8 +96,17 @@ class RegimeAdaptiveStrategy(UniverseStrategy):
         """Return a numeric signal series aligned to an index."""
         return pd.Series(values, index=index).reindex(index).fillna(0.0)
 
-    @classmethod
-    def _moving_average_weight(cls, trend_strength: pd.Series) -> pd.Series:
-        """Return MA weight that rises smoothly with trend strength."""
-        weight_range = cls.max_moving_average_weight - cls.min_moving_average_weight
-        return cls.min_moving_average_weight + trend_strength * weight_range
+    @staticmethod
+    def _strategy_weights(trend_strength: pd.Series) -> dict[str, pd.Series]:
+        """Return normalized strategy weights for each date."""
+        momentum_weight = 0.1 + 0.2 * trend_strength
+        moving_average_weight = 0.3 + 0.6 * trend_strength
+        rsi_weight = (1.0 - moving_average_weight - momentum_weight).clip(lower=0.0)
+
+        total_weight = moving_average_weight + rsi_weight + momentum_weight
+
+        return {
+            "moving_average": moving_average_weight / total_weight,
+            "rsi_mean_reversion": rsi_weight / total_weight,
+            "cross_sectional_momentum": momentum_weight / total_weight,
+        }

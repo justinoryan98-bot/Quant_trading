@@ -88,6 +88,19 @@ def save_equity_curve(
     plt.close()
 
 
+def print_regime_weight_diagnostics(weights: dict[str, float]) -> None:
+    """Print average Regime Adaptive weights for one period."""
+    print("Regime Adaptive average weights")
+    print("-" * 60)
+    print(f"{'MovingAverageStrategy':<34} {weights['moving_average']:>8.2%}")
+    print(f"{'RSIMeanReversionStrategy':<34} {weights['rsi_mean_reversion']:>8.2%}")
+    print(
+        f"{'CrossSectionalMomentumStrategy':<34} "
+        f"{weights['cross_sectional_momentum']:>8.2%}"
+    )
+    print()
+
+
 def main() -> None:
     """Download data, run strategies, and print summary metrics."""
     tickers = [
@@ -152,6 +165,7 @@ def main() -> None:
     data_provider = YFinanceDataProvider()
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
+    regime_adaptive_strategy = RegimeAdaptiveStrategy()
 
     strategies = [
         ("MA/RSI 100/0", [(MovingAverageStrategy(), 1.0), (RSIMeanReversionStrategy(), 0.0)]),
@@ -178,7 +192,7 @@ def main() -> None:
                 (CrossSectionalMomentumStrategy(), 0.2),
             ],
         ),
-        ("Regime Adaptive", RegimeAdaptiveStrategy()),
+        ("Regime Adaptive", regime_adaptive_strategy),
     ]
 
     for period_name, start_date, end_date in periods:
@@ -202,6 +216,9 @@ def main() -> None:
 
         if benchmark_result is not None:
             print_results(period_name, results, benchmark_result)
+            print_regime_weight_diagnostics(
+                regime_adaptive_strategy.average_weights(price_data)
+            )
             save_equity_curve(
                 period_name,
                 strategy_curves,
