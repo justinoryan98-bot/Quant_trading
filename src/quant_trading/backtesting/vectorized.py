@@ -8,10 +8,11 @@ from typing import TypeGuard, cast
 import pandas as pd
 
 from quant_trading.backtesting.base import BacktestEngine
-from quant_trading.strategies.base import Strategy
+from quant_trading.strategies.base import Strategy, UniverseStrategy
 
-StrategyWeight = tuple[Strategy, float]
-StrategyInput = Strategy | list[Strategy] | list[StrategyWeight]
+StrategyLike = Strategy | UniverseStrategy
+StrategyWeight = tuple[StrategyLike, float]
+StrategyInput = StrategyLike | list[StrategyLike] | list[StrategyWeight]
 
 
 @dataclass(frozen=True)
@@ -45,8 +46,9 @@ class VectorizedBacktestEngine(BacktestEngine):
 
     def run(self) -> BacktestResult:
         """Run the strategy or strategies across all stocks."""
+        universe_signals = self._generate_universe_signals()
         strategy_returns = {
-            ticker: self._stock_returns(frame)
+            ticker: self._stock_returns(ticker, frame, universe_signals)
             for ticker, frame in self.price_data.items()
         }
         benchmark_returns = {
@@ -75,33 +77,56 @@ class VectorizedBacktestEngine(BacktestEngine):
             benchmark_sharpe_ratio=self._sharpe_ratio(benchmark_portfolio_returns),
         )
 
-    def _stock_returns(self, prices: pd.DataFrame) -> pd.Series:
+    def _stock_returns(
+        self,
+        ticker: str,
+        prices: pd.DataFrame,
+        universe_signals: dict[int, dict[str, pd.Series]],
+    ) -> pd.Series:
         """Apply averaged strategy signals to one stock's daily returns."""
         close = prices["close"]
         daily_returns = close.pct_change().fillna(0.0)
 
-        signals = self._combined_signals(prices)
+        signals = self._combined_signals(ticker, prices, universe_signals)
         positions = signals.shift(1).fillna(0.0)
         costs = positions.diff().abs().fillna(0.0) * self.transaction_cost
 
         return daily_returns * positions - costs
 
-    def _combined_signals(self, prices: pd.DataFrame) -> pd.Series:
+    def _combined_signals(
+        self,
+        ticker: str,
+        prices: pd.DataFrame,
+        universe_signals: dict[int, dict[str, pd.Series]],
+    ) -> pd.Series:
         """Combine weighted signals from all strategies into one position series."""
-        strategy_signals = [
-            pd.Series(strategy.generate_signals(prices), index=prices.index)
-            .reindex(prices.index)
-            .fillna(0.0)
-            * weight
-            for strategy, weight in self.strategies
-        ]
+        strategy_signals = []
+        for strategy, weight in self.strategies:
+            if isinstance(strategy, UniverseStrategy):
+                raw_signals = universe_signals[id(strategy)].get(ticker)
+            else:
+                raw_signals = strategy.generate_signals(prices)
+
+            if raw_signals is None:
+                raw_signals = pd.Series(0.0, index=prices.index)
+
+            signals = pd.Series(raw_signals, index=prices.index)
+            strategy_signals.append(signals.reindex(prices.index).fillna(0.0) * weight)
 
         return pd.DataFrame(strategy_signals).T.sum(axis=1)
 
+    def _generate_universe_signals(self) -> dict[int, dict[str, pd.Series]]:
+        """Generate full-universe signals once for each universe strategy."""
+        return {
+            id(strategy): strategy.generate_signals(self.price_data)
+            for strategy, _ in self.strategies
+            if isinstance(strategy, UniverseStrategy)
+        }
+
     @staticmethod
-    def _normalize_strategies(strategy: StrategyInput) -> list[tuple[Strategy, float]]:
+    def _normalize_strategies(strategy: StrategyInput) -> list[tuple[StrategyLike, float]]:
         """Return strategies as explicit strategy-weight pairs."""
-        if isinstance(strategy, Strategy):
+        if isinstance(strategy, (Strategy, UniverseStrategy)):
             return [(strategy, 1.0)]
 
         if not strategy:
@@ -110,7 +135,7 @@ class VectorizedBacktestEngine(BacktestEngine):
         if VectorizedBacktestEngine._is_weighted_strategy_list(strategy):
             return [(strategy_item, float(weight)) for strategy_item, weight in strategy]
 
-        unweighted_strategies = cast(list[Strategy], strategy)
+        unweighted_strategies = cast(list[StrategyLike], strategy)
         equal_weight = 1.0 / len(unweighted_strategies)
         return [
             (strategy_item, equal_weight)
@@ -119,7 +144,7 @@ class VectorizedBacktestEngine(BacktestEngine):
 
     @staticmethod
     def _is_weighted_strategy_list(
-        strategies: list[Strategy] | list[StrategyWeight],
+        strategies: list[StrategyLike] | list[StrategyWeight],
     ) -> TypeGuard[list[StrategyWeight]]:
         """Return whether a strategy collection contains explicit weights."""
         return all(isinstance(item, tuple) and len(item) == 2 for item in strategies)

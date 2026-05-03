@@ -14,7 +14,11 @@ import pandas as pd
 
 from quant_trading.backtesting import VectorizedBacktestEngine
 from quant_trading.data import YFinanceDataProvider
-from quant_trading.strategies import MovingAverageStrategy, RSIMeanReversionStrategy
+from quant_trading.strategies import (
+    CrossSectionalMomentumStrategy,
+    MovingAverageStrategy,
+    RSIMeanReversionStrategy,
+)
 
 
 def print_results(
@@ -156,6 +160,23 @@ def main() -> None:
         ("MA/RSI 50/50", [(MovingAverageStrategy(), 0.5), (RSIMeanReversionStrategy(), 0.5)]),
         ("MA/RSI 30/70", [(MovingAverageStrategy(), 0.3), (RSIMeanReversionStrategy(), 0.7)]),
         ("MA/RSI 0/100", [(MovingAverageStrategy(), 0.0), (RSIMeanReversionStrategy(), 1.0)]),
+        ("Cross-Sectional Momentum", CrossSectionalMomentumStrategy()),
+        (
+            "MA/RSI/Momentum 60/20/20",
+            [
+                (MovingAverageStrategy(), 0.6),
+                (RSIMeanReversionStrategy(), 0.2),
+                (CrossSectionalMomentumStrategy(), 0.2),
+            ],
+        ),
+        (
+            "MA/RSI/Momentum 70/10/20",
+            [
+                (MovingAverageStrategy(), 0.7),
+                (RSIMeanReversionStrategy(), 0.1),
+                (CrossSectionalMomentumStrategy(), 0.2),
+            ],
+        ),
     ]
 
     for period_name, start_date, end_date in periods:
