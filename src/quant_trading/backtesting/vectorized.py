@@ -47,21 +47,23 @@ class VectorizedBacktestEngine(BacktestEngine):
     def run(self) -> BacktestResult:
         """Run the strategy or strategies across all stocks."""
         universe_signals = self._generate_universe_signals()
-        strategy_returns = {
-            ticker: self._stock_returns(ticker, frame, universe_signals)
+        signals = {
+            ticker: self._combined_signals(ticker, frame, universe_signals)
             for ticker, frame in self.price_data.items()
         }
-        benchmark_returns = {
+        stock_returns = {
             ticker: self._buy_and_hold_returns(frame)
             for ticker, frame in self.price_data.items()
         }
 
-        returns = pd.DataFrame(strategy_returns).fillna(0.0)
-        portfolio_returns = returns.mean(axis=1)
+        returns = pd.DataFrame(stock_returns).fillna(0.0)
+        positions = self._normalize_positions(pd.DataFrame(signals).fillna(0.0))
+        gross_returns = (returns * positions).sum(axis=1)
+        costs = positions.diff().abs().fillna(0.0).sum(axis=1) * self.transaction_cost
+        portfolio_returns = gross_returns - costs
         cumulative_returns = (1.0 + portfolio_returns).cumprod() - 1.0
 
-        benchmark_returns_frame = pd.DataFrame(benchmark_returns).fillna(0.0)
-        benchmark_portfolio_returns = benchmark_returns_frame.mean(axis=1)
+        benchmark_portfolio_returns = returns.mean(axis=1)
         benchmark_cumulative_returns = (
             (1.0 + benchmark_portfolio_returns).cumprod() - 1.0
         )
@@ -76,22 +78,6 @@ class VectorizedBacktestEngine(BacktestEngine):
             benchmark_max_drawdown=self._max_drawdown(benchmark_portfolio_returns),
             benchmark_sharpe_ratio=self._sharpe_ratio(benchmark_portfolio_returns),
         )
-
-    def _stock_returns(
-        self,
-        ticker: str,
-        prices: pd.DataFrame,
-        universe_signals: dict[int, dict[str, pd.Series]],
-    ) -> pd.Series:
-        """Apply averaged strategy signals to one stock's daily returns."""
-        close = prices["close"]
-        daily_returns = close.pct_change().fillna(0.0)
-
-        signals = self._combined_signals(ticker, prices, universe_signals)
-        positions = signals.shift(1).fillna(0.0)
-        costs = positions.diff().abs().fillna(0.0) * self.transaction_cost
-
-        return daily_returns * positions - costs
 
     def _combined_signals(
         self,
@@ -114,6 +100,17 @@ class VectorizedBacktestEngine(BacktestEngine):
             strategy_signals.append(signals.reindex(prices.index).fillna(0.0) * weight)
 
         return pd.DataFrame(strategy_signals).T.sum(axis=1)
+
+    @staticmethod
+    def _normalize_positions(signals: pd.DataFrame) -> pd.DataFrame:
+        """Shift signals into positions and normalize active positive exposure."""
+        raw_positions = signals.shift(1).fillna(0.0).clip(lower=0.0)
+        active_exposure = raw_positions.sum(axis=1)
+
+        return raw_positions.div(
+            active_exposure.where(active_exposure > 0),
+            axis=0,
+        ).fillna(0.0)
 
     def _generate_universe_signals(self) -> dict[int, dict[str, pd.Series]]:
         """Generate full-universe signals once for each universe strategy."""
